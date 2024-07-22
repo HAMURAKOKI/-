@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Financial App</title>
+    <style>
+        /* 既存のスタイルはそのまま */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        header {
+            background-color: #333;
+            color: #fff;
+            padding: 10px 0;
+            text-align: center;
+        }
+        nav a {
+            color: #fff;
+            margin: 0 10px;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        nav a.disabled {
+            pointer-events: none;
+            opacity: 0.5;
+        }
+        main {
+            padding: 20px;
+        }
+        form {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input, button, select {
+            display: block;
+            margin-bottom: 10px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 10px;
+            text-align: left;
+        }
+        .content {
+            display: none;
+        }
+        .content.active {
+            display: block;
+        }
+        .month-header {
+            font-weight: bold;
+            background-color: #eee;
+        }
+        .available-funds {
+            background-color: #f9f9f9;
+            font-weight: bold;
+        }
+        .chart-container {
+            margin-top: 20px;
+        }
+    </style>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <header>
+        <h1>Financial App</h1>
+        <nav>
+            <a id="homeLink" class="disabled" onclick="showContent('home')">Home</a>
+            <a id="settingsLink" class="disabled" onclick="showContent('settings')">Settings</a>
+            <a onclick="showContent('login')">Login</a>
+            <a onclick="showContent('register')">Register</a>
+        </nav>
+    </header>
+    <main>
+        <div id="home" class="content">
+            <h2>Welcome, <span id="usernameDisplay">User</span></h2>
+            <p>Available Funds: $<span id="availableFunds">0.00</span></p>
+            <p id="savingGoalDisplay"></p>
+            <form id="transactionForm">
+                <label for="date">Date:</label>
+                <input type="date" id="date" name="date" required>
+                
+                <label for="income">Income:</label>
+                <input type="number" step="0.01" id="income" name="income" required>
+                
+                <label for="expense">Expense:</label>
+                <input type="number" step="0.01" id="expense" name="expense" required>
+                
+                <button type="submit">Add Transaction</button>
+            </form>
+            <label for="monthSelector">Select Month:</label>
+            <select id="monthSelector" onchange="filterTransactionsByMonth()">
+                <!-- Options will be populated by JavaScript -->
+            </select>
+            <h3>Transaction History</h3>
+            <table id="transactionHistory">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Income</th>
+                        <th>Expense</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Transaction rows will be added here -->
+                </tbody>
+            </table>
+            <div class="chart-container">
+                <canvas id="fundsChart"></canvas>
+            </div>
+        </div>
+        <div id="settings" class="content">
+            <h2>Settings</h2>
+            <form id="settingsForm">
+                <label for="monthly_saving_goal">Monthly Saving Goal:</label>
+                <input type="number" step="0.01" id="monthly_saving_goal" name="monthly_saving_goal" required>
+                
+                <button type="submit">Save</button>
+            </form>
+        </div>
+        <div id="login" class="content active">
+            <h2>Login</h2>
+            <form id="loginForm">
+                <label for="login_username">Username:</label>
+                <input type="text" id="login_username" name="login_username" required>
+                
+                <label for="login_password">Password:</label>
+                <input type="password" id="login_password" name="login_password" required>
+                
+                <button type="submit">Login</button>
+            </form>
+        </div>
+        <div id="register" class="content">
+            <h2>Register</h2>
+            <form id="registerForm">
+                <label for="register_username">Username:</label>
+                <input type="text" id="register_username" name="register_username" required>
+                
+                <label for="register_password">Password:</label>
+                <input type="password" id="register_password" name="register_password" required>
+                
+                <button type="submit">Register</button>
+            </form>
+        </div>
+    </main>
+    <script>
+        let transactions = [];
+        let monthlySavingGoal = 0;
+
+        function showContent(contentId) {
+            const contents = document.querySelectorAll('.content');
+            contents.forEach(content => {
+                if (content.id === contentId) {
+                    content.classList.add('active');
+                } else {
+                    content.classList.remove('active');
+                }
+            });
+
+            const username = localStorage.getItem('username');
+            const isLoggedIn = username && contentId !== 'login' && contentId !== 'register';
+
+            document.getElementById('homeLink').classList.toggle('disabled', !isLoggedIn);
+            document.getElementById('settingsLink').classList.toggle('disabled', !isLoggedIn);
+            
+            if (contentId === 'home') {
+                document.getElementById('usernameDisplay').textContent = username || 'User';
+                document.getElementById('savingGoalDisplay').textContent = monthlySavingGoal ? `Saving Goal: $${monthlySavingGoal.toFixed(2)}` : '';
+                updateAvailableFunds();
+                populateMonthSelector();
+                filterTransactionsByMonth();
+            }
+        }
+
+        function updateAvailableFunds() {
+            let availableFunds = 0;
+            transactions.forEach(transaction => {
+                availableFunds += transaction.income - transaction.expense;
+            });
+            document.getElementById('availableFunds').textContent = availableFunds.toFixed(2);
+        }
+
+        function populateMonthSelector() {
+            const monthSelector = document.getElementById('monthSelector');
+            monthSelector.innerHTML = '';
+
+            const months = transactions.reduce((months, transaction) => {
+                const monthYear = new Date(transaction.date).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit' });
+                if (!months.includes(monthYear)) months.push(monthYear);
+                return months;
+            }, []);
+
+            months.forEach(monthYear => {
+                const option = document.createElement('option');
+                option.value = monthYear;
+                option.textContent = monthYear;
+                monthSelector.appendChild(option);
+            });
+        }
+
+        function filterTransactionsByMonth() {
+            const selectedMonth = document.getElementById('monthSelector').value;
+            const tbody = document.querySelector('#transactionHistory tbody');
+            tbody.innerHTML = ''; // Clear existing rows
+
+            const filteredTransactions = transactions.filter(transaction => {
+                const monthYear = new Date(transaction.date).toLocaleDateString('en-US', { year: 'numeric', month: '2-digit' });
+                return monthYear === selectedMonth;
+            });
+
+            if (filteredTransactions.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3">No transactions for the selected month.</td></tr>';
+                updateChart([], []);
+                return;
+            }
+
+            let monthlyFunds = 0;
+            const dates = [];
+            const funds = [];
+
+            filteredTransactions.forEach(({ date, income, expense }) => {
+                const dateStr = new Date(date).toLocaleDateString('en-US', { day: '2-digit', month: '2-digit' });
+                const dailyFunds = income - expense + monthlyFunds;
+                dates.push(dateStr);
+                funds.push(dailyFunds);
+                monthlyFunds = dailyFunds;
+
+                const row = document.createElement('tr');
+                row.innerHTML = `<td>${date}</td><td>$${income.toFixed(2)}</td><td>$${expense.toFixed(2)}</td>`;
+                tbody.appendChild(row);
+            });
+
+            // Add the available funds for the selected month
+            tbody.innerHTML += `
+                <tr class="available-funds">
+                    <td colspan="2">Available Funds for ${selectedMonth}:</td>
+                    <td>$${monthlyFunds.toFixed(2)}</td>
+                </tr>
+            `;
+
+            updateChart(dates, funds);
+        }
+
+        function updateChart(labels, data) {
+            const ctx = document.getElementById('fundsChart').getContext('2d');
+            if (window.myChart) {
+                window.myChart.destroy();
+            }
+            window.myChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Available Funds',
+                        data: data,
+                        borderColor: 'rgba(75, 192, 192, 1)',
+                        backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                        borderWidth: 2,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Available Funds'
+                            },
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        document.getElementById('registerForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('register_username').value;
+            const password = document.getElementById('register_password').value;
+
+            localStorage.setItem('username', username);
+            localStorage.setItem('password', password);
+
+            alert('Registration successful!');
+            showContent('login');
+        });
+
+        document.getElementById('loginForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const username = document.getElementById('login_username').value;
+            const password = document.getElementById('login_password').value;
+
+            const storedUsername = localStorage.getItem('username');
+            const storedPassword = localStorage.getItem('password');
+
+            if (username === storedUsername && password === storedPassword) {
+                alert('Login successful!');
+                document.getElementById('usernameDisplay').textContent = username;
+                showContent('home');
+            } else {
+                alert('Invalid username or password.');
+            }
+        });
+
+        document.getElementById('settingsForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            monthlySavingGoal = parseFloat(document.getElementById('monthly_saving_goal').value);
+            alert('Monthly saving goal updated to $' + monthlySavingGoal.toFixed(2));
+            showContent('home');
+        });
+
+        document.getElementById('transactionForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const date = document.getElementById('date').value;
+            const income = parseFloat(document.getElementById('income').value) || 0;
+            const expense = parseFloat(document.getElementById('expense').value) || 0;
+
+            transactions.push({ date, income, expense });
+
+            updateAvailableFunds();
+            populateMonthSelector();
+            filterTransactionsByMonth();
+
+            const goalDisplay = monthlySavingGoal ? `Saving Goal: $${monthlySavingGoal.toFixed(2)}` : '';
+            document.getElementById('savingGoalDisplay').textContent = goalDisplay;
+            
+            document.getElementById('transactionForm').reset();
+        });
+
+        showContent('login');
+    </script>
+</body>
+</html>
